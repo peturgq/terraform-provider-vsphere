@@ -15,6 +15,7 @@ import (
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
+    "github.com/mholt/archiver"
 	"golang.org/x/net/context"
 )
 
@@ -453,6 +454,11 @@ func resourceVSphereVirtualMachine() *schema.Resource {
 							Optional: true,
 						},
 
+                        "ova": &schema.Schema {
+                            Type:     schema.TypeString,
+                            Optional: true,
+                        },
+
 						"bootable": &schema.Schema{
 							Type:     schema.TypeBool,
 							Optional: true,
@@ -616,6 +622,8 @@ func resourceVSphereVirtualMachineUpdate(d *schema.ResourceData, meta interface{
 
 				var diskPath string
 				switch {
+                case disk["ova"] != "":
+                    diskPath = disk["ova"].(string)
 				case disk["vmdk"] != "":
 					diskPath = disk["vmdk"].(string)
 				case disk["name"] != "":
@@ -1431,11 +1439,13 @@ func addHardDisk(vm *object.VirtualMachine, size, iops int64, diskType string, d
 	// If diskPath is not specified, pass empty string to CreateDisk()
 	if diskPath == "" {
 		return fmt.Errorf("[ERROR] addHardDisk - No path proided")
+    if strings.Contains(diskPath, "ova")
+        diskPath = diskPath             // LAGA PETUR
 	} else {
 		diskPath = datastore.Path(diskPath)
+	    disk := devices.CreateDisk(controller, datastore.Reference(), diskPath)
+	    log.Printf("[DEBUG] addHardDisk - diskPath: %v", diskPath)
 	}
-	log.Printf("[DEBUG] addHardDisk - diskPath: %v", diskPath)
-	disk := devices.CreateDisk(controller, datastore.Reference(), diskPath)
 
 	if strings.Contains(controller_type, "scsi") {
 		unitNumber, err := getNextUnitNumber(devices, controller)
@@ -1476,10 +1486,23 @@ func addHardDisk(vm *object.VirtualMachine, size, iops int64, diskType string, d
 		return vm.AddDevice(context.TODO(), disk)
 	} else {
 		log.Printf("[DEBUG] addHardDisk: Disk already present.\n")
-
 		return nil
 	}
 }
+
+func untarOva(path string) {
+    archiver.Tar.Open("tmp/ova/")
+}
+
+func pickHandler(path string) {
+    if _, err := os.Stat(path); os.IsNotExist(err) {
+       return http_handler(path)
+    } else {
+       return file_handler(path)
+    }
+
+}
+
 
 func getSCSIControllers(vmDevices object.VirtualDeviceList) []*types.VirtualController {
 	// get virtual scsi controllers of all supported types
